@@ -154,7 +154,10 @@ function openTool(name){
   frame.src = t.url;
 }
 function showErr(m){ shieldErr.textContent = m; shield.classList.add('on'); }
-function closeRunner(){ runner.classList.remove('on'); frame.src=''; }
+function closeRunner(){
+  if(location.hash){ location.hash=''; return; }   // hashchange handler closes + clears
+  runner.classList.remove('on'); frame.src=''; shield.classList.remove('on');
+}
 function step(d){
   const cur = TOOLS.findIndex(x=>x.name.toLowerCase()===decodeURIComponent((location.hash.split('/')[1]||'')).toLowerCase());
   const n = (cur+d+TOOLS.length)%TOOLS.length;

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ToolDeck — all my tools in one place</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --border:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --accent2:#3fb950;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent); text-decoration:none;}
+
+  /* ---------- HOME ---------- */
+  #home{max-width:1080px; margin:0 auto; padding:40px 24px;}
+  header.top{display:flex; align-items:baseline; gap:12px; margin-bottom:6px;}
+  header.top h1{font-size:26px; letter-spacing:.5px;}
+  header.top .grin{color:var(--muted); font-size:14px;}
+  p.tagline{color:var(--muted); margin-bottom:28px; font-size:15px;}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px;}
+  .card{
+    background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    padding:20px; cursor:pointer; transition:transform .12s ease, border-color .12s ease, background .12s ease;
+    display:flex; flex-direction:column; gap:10px; text-align:left;
+  }
+  .card:hover{transform:translateY(-2px); border-color:var(--accent); background:var(--panel2); position:relative;}
+  .card .ico{font-size:28px; line-height:1; filter:drop-shadow(0 2px 4px rgba(0,0,0,.4));}
+  .card h2{font-size:17px; margin:0;}
+  .card p{color:var(--muted); font-size:13.5px; line-height:1.45; flex:1;}
+  .card .go{color:var(--accent); font-size:13px; font-weight:600; opacity:0; transition:opacity .12s;}
+  .card:hover .go{opacity:1;}
+  .foot{color:var(--muted); font-size:12.5px; text-align:center; margin-top:36px;}
+  .foot code{background:var(--panel); padding:2px 6px; border-radius:5px; border:1px solid var(--border);}
+
+  /* ---------- RUNNER ---------- */
+  #runner{position:fixed; inset:0; display:none; flex-direction:column; background:var(--bg); z-index:100;}
+  #runner.on{display:flex;}
+  .bar{
+    display:flex; align-items:center; gap:8px; padding:8px 14px;
+    background:var(--panel); border-bottom:1px solid var(--border); min-height:46px; flex-wrap:wrap;
+  }
+  .bar .btn{
+    background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    border-radius:8px; padding:6px 12px; font-size:13.5px; cursor:pointer; transition:background .1s;
+  }
+  .bar .btn:hover{background:#262c36;}
+  .bar .title{font-weight:600; font-size:14px; margin-left:4px; flex:1; min-width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .bar .nav{margin-left:auto; display:flex; gap:6px;}
+  .bar .ext{margin-left:4px;}
+  .wrap{flex:1; position:relative;}
+  .wrap iframe{position:absolute; inset:0; width:100%; height:100%; border:0; background:#fff;}
+  .wrap .shield{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:var(--bg); color:var(--muted); padding:24px; text-align:center; flex-direction:column; gap:14px;
+  }
+  .wrap .shield.on{display:flex;}
+  .spinner{width:34px; height:34px; border:4px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .err{color:#f85149;}
+</style>
+</head>
+<body>
+
+<!-- ============ HOME ============ -->
+<main id="home">
+  <header class="top">
+    <h1>🧰 ToolDeck</h1><span class="grin">/ weirders</span>
+  </header>
+  <p class="tagline">Every single-file tool, one deck. Pick a card to launch it — each tool runs live from its own repo. No code copied, always up to date.</p>
+  <div class="grid" id="grid"></div>
+  <footer class="foot">Tip: share a card directly with <code>#tool/&lt;name&gt;</code> in the URL &nbsp;·&nbsp; <a href="https://github.com/weirders/ToolDeck" target="_blank" rel="noopener">repo</a></footer>
+</main>
+
+<!-- ============ RUNNER ============ -->
+<div id="runner">
+  <div class="bar">
+    <button class="btn" id="btnBack">← All tools</button>
+    <span class="title" id="runTitle">Tool</span>
+    <span class="nav">
+      <button class="btn" id="btnPrev" title="Previous tool">◀</button>
+      <button class="btn" id="btnNext" title="Next tool">▶</button>
+    </span>
+    <a class="btn ext" id="extLink" target="_blank" rel="noopener">Open ↗</a>
+  </div>
+  <div class="wrap">
+    <div class="shield" id="shield">
+      <div class="spinner"></div>
+      <div>Loading <span id="shieldName"></span>…</div>
+      <div class="err" id="shieldErr"></div>
+    </div>
+    <iframe id="frame" src="" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals" referrerpolicy="no-referrer"></iframe>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   REGISTRY  —  add a tool by appending ONE object below. That's it.
+   - name   : used in the URL hash (#tool/Name), keep it URL-safe
+   - url    : where the app is hosted (GitHub Pages already does this)
+   - icon   : any emoji / single char
+   - desc   : one-line description shown on the card
+   - accent : optional hex color; omitted → default accent
+   ===================================================================== */
+const TOOLS = [
+  { name:"EHS-Tools-Web", url:"https://weirders.github.io/EHS-Tools-Web/",
+    icon:"🦺", accent:"#d29922",
+    desc:"EHS visual analysis suite — 5-Why / fishbone root-cause trees, ABC behaviour analysis and more." },
+  { name:"InspectFlow", url:"https://weirders.github.io/InspectFlow/",
+    icon:"🔍", accent:"#58a6ff",
+    desc:"Inspection & checklist workbench — templates, active inspections, archive and reports. Local-first." },
+  { name:"NewsFlow", url:"https://weirders.github.io/NewsFlow/",
+    icon:"📰", accent:"#bc8cff",
+    desc:"News reader & aggregator — recent stories by timeframe, top-scored and most-commented." },
+  { name:"VoiceFlowWeb", url:"https://weirders.github.io/VoiceFlowWeb/",
+    icon:"🎙️", accent:"#3fb950",
+    desc:"Voice dictation — live transcription with word count, session timer and copy-to-clipboard." },
+];
+
+const $ = id => document.getElementById(id);
+const grid = $('grid'), frame = $('frame'), runner = $('runner');
+const shield = $('shield'), shieldErr = $('shieldErr'), shieldName = $('shieldName');
+
+/* ---------- Home cards ---------- */
+function buildHome(){
+  grid.innerHTML = '';
+  TOOLS.forEach(t=>{
+    const c = document.createElement('button');
+    c.className='card';
+    c.innerHTML = `<div class="ico">${t.icon}</div><h2>${t.name}</h2><p>${t.desc||''}</p><span class="go">Launch →</span>`;
+    c.addEventListener('click', ()=>location.hash = '#tool/'+encodeURIComponent(t.name));
+    grid.appendChild(c);
+  });
+}
+
+/* ---------- Runner ---------- */
+function openTool(name){
+  const t = TOOLS.find(x=>x.name.toLowerCase()===String(name).toLowerCase());
+  if(!t){ location.hash=''; return; }
+  runner.classList.add('on');
+  $('runTitle').textContent = t.icon+'  '+t.name;
+  $('shieldName').textContent = t.name;
+  $('extLink').href = t.url;
+  shield.classList.add('on'); shieldErr.textContent='';
+  frame.onload = ()=> shield.classList.remove('on');
+  frame.onerror = ()=> showErr('Could not load this tool.');
+  frame.src = t.url;
+}
+function showErr(m){ shieldErr.textContent = m; shield.classList.add('on'); }
+function closeRunner(){ runner.classList.remove('on'); frame.src=''; }
+function step(d){
+  const cur = TOOLS.findIndex(x=>x.name.toLowerCase()===decodeURIComponent((location.hash.split('/')[1]||'')).toLowerCase());
+  const n = (cur+d+TOOLS.length)%TOOLS.length;
+  location.hash = '#tool/'+encodeURIComponent(TOOLS[n].name);
+}
+
+$('btnBack').onclick = closeRunner;
+$('btnPrev').onclick = ()=>step(-1);
+$('btnNext').onclick = ()=>step(1);
+
+window.addEventListener('hashchange', ()=>{
+  const m = location.hash.match(/^#tool\/(.+)$/);
+  if(m) openTool(decodeURIComponent(m[1]));
+  else { closeRunner(); buildHome(); window.scrollTo(0,0); }
+});
+
+/* ---------- Boot (home is default) ---------- */
+buildHome();
+if(location.hash) window.dispatchEvent(new Event('hashchange'));
+</script>
+</body>
+</html>

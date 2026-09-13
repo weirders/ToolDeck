@@ -65,6 +65,17 @@
   .spinner{width:34px; height:34px; border:4px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg)}}
   .err{color:#f85149;}
+
+  /* ---------- SYNC ---------- */
+  header.top .syncbtn{margin-left:auto;}
+  .syncbtn{
+    background:var(--panel); border:1px solid var(--border); color:var(--text);
+    border-radius:8px; padding:6px 12px; font-size:13.5px; cursor:pointer; display:inline-flex; align-items:center; gap:7px;
+  }
+  .syncbtn:hover{border-color:var(--accent); background:var(--panel2);}
+  .sdot{width:9px; height:9px; border-radius:50%; background:#6e7681; display:inline-block;}
+  .sdot.on{background:var(--accent2);} .sdot.busy{background:#d29922;} .sdot.err{background:#f85149;}
+  .bar .syncbtn{padding:6px 10px;}
 </style>
 </head>
 <body>
@@ -73,6 +84,7 @@
 <main id="home">
   <header class="top">
     <h1>🧰 ToolDeck</h1><span class="grin">/ weirders</span>
+    <button class="syncbtn" id="btnSyncHome" title="Sync"><span class="sdot" data-syncdot></span>Sync</button>
   </header>
   <p class="tagline">Every single-file tool, one deck. Pick a card to launch it — each tool runs live from its own repo. No code copied, always up to date.</p>
   <div class="grid" id="grid"></div>
@@ -88,6 +100,7 @@
       <button class="btn" id="btnPrev" title="Previous tool">◀</button>
       <button class="btn" id="btnNext" title="Next tool">▶</button>
     </span>
+    <button class="syncbtn" id="btnSyncBar" title="Sync"><span class="sdot" data-syncdot></span><span class="lbl">Sync</span></button>
     <a class="btn ext" id="extLink" target="_blank" rel="noopener">Open ↗</a>
   </div>
   <div class="wrap">
@@ -100,6 +113,7 @@
   </div>
 </div>
 
+<script src="sync.v1.js"></script>
 <script>
 /* =====================================================================
    REGISTRY  —  add a tool by appending ONE object below. That's it.
@@ -122,6 +136,12 @@ const TOOLS = [
   { name:"VoiceFlowWeb", url:"https://weirders.github.io/VoiceFlowWeb/",
     icon:"🎙️", accent:"#3fb950",
     desc:"Voice dictation — live transcription with word count, session timer and copy-to-clipboard." },
+  { name:"FloorplanWeb", url:"https://weirders.github.io/FloorplanWeb/",
+    icon:"🗺️", accent:"#f778ba",
+    desc:"Floor-plan marker tool — pin findings on plans, add photos, number and print. Syncs device-to-device." },
+  { name:"SOATWeb", url:"https://weirders.github.io/SOATWeb/",
+    icon:"🧩", accent:"#ff7b72",
+    desc:"SOAT / SCAT incident analysis — systematic cause tree, item lists, reports and import/export." },
 ];
 
 const $ = id => document.getElementById(id);
@@ -173,6 +193,26 @@ window.addEventListener('hashchange', ()=>{
   if(m) openTool(decodeURIComponent(m[1]));
   else { closeRunner(); buildHome(); window.scrollTo(0,0); }
 });
+
+/* ---------- Sync (shared sfha-sync layer, see SYNC-CONTRACT.md) ----------
+   ToolDeck itself stores no records; it hosts the sync leader so that every
+   tool running in the iframe shares one PeerJS identity and one connection set.
+   Tools opened standalone elect their own leader. */
+function paintSyncDot(s){
+  const cls = !s.leaderPresent ? '' :
+    s.broker==='online' ? (s.connections.some(c=>c.state==='open') ? 'on' : 'busy') :
+    s.broker==='connecting' ? 'busy' :
+    (s.broker==='id-taken'||s.broker==='error'||s.broker==='disabled') ? 'err' : '';
+  const open = s.connections.filter(c=>c.state==='open').length;
+  const title = 'Sync: ' + (s.broker||'offline') + (open ? ` · ${open} connected` : '') + (s.leader ? ' · this window is leader' : '');
+  document.querySelectorAll('[data-syncdot]').forEach(d=>{ d.className='sdot '+cls; d.parentElement.title=title; });
+}
+if(window.SfhaSync){
+  SfhaSync.init({app:'tooldeck'}).then(()=>{ paintSyncDot(SfhaSync.status()); SfhaSync.onStatus(paintSyncDot); })
+    .catch(e=>console.error('sfha-sync init failed', e));
+  $('btnSyncHome').onclick = ()=>SfhaSync.openPanel();
+  $('btnSyncBar').onclick  = ()=>SfhaSync.openPanel();
+}
 
 /* ---------- Boot (home is default) ---------- */
 buildHome();

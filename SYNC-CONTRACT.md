@@ -10,7 +10,7 @@
 - `app` = your app name (lowercase, e.g. `floorplan`), `coll` = collection (e.g. `markers`). Index `appColl` on `[app, coll]`.
 - Files are **assets** `{hash, blob, mime, size}` (SHA-256 hex). Reference them from the payload with a `hash` field (any depth) or a `hashes: [..]` array — the manifest finds them automatically.
 - Merge rule: last write wins on `updatedAt`. Deletes are tombstones (`deleted:true`); never physically remove a record.
-- Contacts `{peerId, label, lastSeen, lastSync}` and meta (`peerId`, `settings.peerServer`) are shared by all apps.
+- Contacts `{peerId, label, lastSeen, lastSync}` and meta (`peerId`, `settings {peerServer, iceServers}`) are shared by all apps.
 
 ## API (all async unless noted)
 | call | behaviour |
@@ -26,7 +26,7 @@
 | `myId()`, `isLeader()`, `status()` (sync) | `status()` → `{leader, leaderPresent, broker, myId, connections[], pending[], lastSync, log[]}` |
 | `onStatus(fn)`, `openPanel()`, `syncNow(peerId?)` | UI hooks — `openPanel()` is the full Sync panel, free for every app |
 | `migrate(name, fn)` | runs `fn` once per app+name (flag in meta) |
-| `setPeerServer({host,port,path,secure}|null)` | private broker; default is the public PeerJS broker |
+| `settings.get()` / `settings.save({iceServers, peerServer})` | shared connection settings in meta: `iceServers` (RTCIceServer array — add your own TURN on `turns:…:443?transport=tcp` for corporate networks) and `peerServer` `{host,port,path,secure}`; `null` = built-in defaults. Also editable in the Sync panel. |
 
 Only call `onChange` handlers to re-read from `SfhaSync` — the DB is the single source of truth; keep no second copy that can diverge.
 

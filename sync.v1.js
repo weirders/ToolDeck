@@ -8,7 +8,7 @@
    - records : {id, app, coll, updatedAt (ISO), deleted, payload}  (index appColl)
    - assets  : {hash, blob, mime, size}  content-addressed, SHA-256
    - contacts: {peerId, label, lastSeen, lastSync}
-   - meta    : {key, ...}  (peerId, settings)
+   - meta    : {key, ...}  (peerId, settings {peerServer, iceServers})
 
    Leader rule: exactly one window per origin registers the PeerJS peer,
    dials contacts every 30 s and answers incoming connections. Elected via
@@ -56,6 +56,7 @@
 
   // leader-only
   let peer = null, broker = 'offline', brokerMsg = '', dialTimer = null, hbTimer = null;
+  let token = null, retryTimer = null, retries = 0; // broker session token + reconnect backoff
   const conns = new Map();   // peerId -> {conn, dir, state, lastManifest, timer, expect, incoming, stats, lastSyncAt}
   const pending = new Map(); // unknown incoming peers awaiting approval
   let contactsCache = [];
@@ -224,41 +225,64 @@
       await new Promise(res => { const s = document.createElement('script'); s.src = PEERJS_URL; s.onload = res; s.onerror = () => res(); document.head.appendChild(s); });
     }
     if (!window.Peer) { broker = 'disabled'; brokerMsg = 'PeerJS could not be loaded'; pushStatus(); return; }
+    token = uid();
     await createPeer();
     const bye = () => { if (peer) { try { peer.destroy(); } catch {} } };
     window.addEventListener('pagehide', bye); window.addEventListener('beforeunload', bye);
+    // Network hop: the browser tells us we are back online -> rebuild the broker session right away
+    window.addEventListener('online', () => { if (isLeader && broker !== 'online') { log('network back online — reconnecting'); recreatePeer(0); } });
+    if (navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener('change', () => { if (isLeader && broker !== 'online') recreatePeer(1000); });
     pushStatus();
   }
   function stepDown(reason) {
     // Used by the heartbeat fallback when two windows collided on the peer ID.
     log('stepping down: ' + reason);
-    isLeader = false; clearInterval(dialTimer); clearInterval(hbTimer);
+    isLeader = false; clearInterval(dialTimer); clearInterval(hbTimer); clearTimeout(retryTimer);
     for (const e of conns.values()) { try { e.conn.close(); } catch {} } conns.clear();
     if (peer) { try { peer.destroy(); } catch {} peer = null; }
     broker = 'offline';
   }
 
   /* ---------- broker ---------- */
+  /** Tear down the current broker session and build a new one after `delay` ms (coalesced). */
+  function recreatePeer(delay) {
+    if (!isLeader) return;
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => { retryTimer = null; if (!isLeader) return; if (peer) { try { peer.destroy(); } catch {} peer = null; } createPeer(); }, delay);
+  }
   async function createPeer() {
-    let opts = { debug: 0, config: ICE };
     const settings = (await dbGet('meta', 'settings')) || {};
+    const ice = Array.isArray(settings.iceServers) && settings.iceServers.length ? settings.iceServers : ICE.iceServers;
+    let opts = { debug: 0, config: { iceServers: ice }, token };
     const ps = settings.peerServer || (await dbGet('meta', 'peerServer'));
     if (ps && ps.host) opts = { ...opts, host: ps.host, port: ps.port, path: ps.path || '/', secure: ps.secure !== false };
     broker = 'connecting'; pushStatus();
-    peer = new Peer(myId, opts);
-    peer.on('open', () => { broker = 'online'; brokerMsg = ''; log('broker: online as ' + short(myId)); pushStatus(); dialAll(); });
-    peer.on('connection', handleIncoming);
-    peer.on('disconnected', () => { if (broker === 'id-taken') return; broker = 'offline'; pushStatus(); setTimeout(() => { if (peer && !peer.destroyed && broker === 'offline') { broker = 'connecting'; pushStatus(); peer.reconnect(); } }, 5000); });
-    peer.on('close', () => { if (broker !== 'id-taken') broker = 'offline'; pushStatus(); });
-    peer.on('error', err => {
+    const p = peer = new Peer(myId, opts);
+    const mine = () => peer === p;
+    p.on('open', () => { if (!mine()) return; broker = 'online'; brokerMsg = ''; retries = 0; log('broker: online as ' + short(myId)); pushStatus(); dialAll(); });
+    p.on('connection', handleIncoming);
+    p.on('disconnected', () => {
+      if (!mine()) return; broker = 'offline'; pushStatus();
+      // first try a cheap reconnect with the same session; if that does not stick, rebuild the session
+      setTimeout(() => { if (mine() && !p.destroyed && broker === 'offline') { broker = 'connecting'; pushStatus(); try { p.reconnect(); } catch { recreatePeer(0); } } }, 5000);
+      setTimeout(() => { if (mine() && broker !== 'online') { log('broker: reconnect did not complete — rebuilding session'); recreatePeer(0); } }, 25000);
+    });
+    p.on('close', () => { if (mine() && broker !== 'id-taken') { broker = 'offline'; pushStatus(); } });
+    p.on('error', err => {
+      if (!mine()) return;
       const type = err.type || '';
       if (type === 'unavailable-id') {
-        broker = 'id-taken'; log('broker: ID already in use elsewhere'); try { peer.destroy(); } catch {}
-        if (!navigator.locks) stepDown('peer ID collision'); // another window is the real leader
-        pushStatus(); return;
+        // Almost always our own stale registration after a network hop: the broker keeps the old socket
+        // alive for ~1 minute. Keep retrying with backoff; the same session token lets it replace the stale one.
+        broker = 'id-taken'; retries++;
+        const delay = Math.min(60000, 10000 * Math.pow(2, retries - 1));
+        brokerMsg = 'retrying in ' + Math.round(delay / 1000) + ' s';
+        log('broker: ID still registered from a previous session — ' + brokerMsg);
+        if (!navigator.locks && retries >= 3) { stepDown('peer ID collision'); return; } // fallback election: another window really is leader
+        recreatePeer(delay); pushStatus(); return;
       }
       if (type === 'peer-unavailable') return; // contact is simply offline
-      if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(type)) { broker = 'offline'; brokerMsg = err.message || type; pushStatus(); setTimeout(() => { if (isLeader && broker === 'offline') { try { peer.destroy(); } catch {} createPeer(); } }, 15000); return; }
+      if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(type)) { broker = 'offline'; brokerMsg = err.message || type; pushStatus(); recreatePeer(15000); return; }
       log('error: ' + type + ' ' + (err.message || '')); brokerMsg = err.message || type; pushStatus();
     });
     clearInterval(dialTimer); dialTimer = setInterval(dialAll, DIAL_MS);
@@ -268,6 +292,7 @@
   const contact = pid => contactsCache.find(c => c.peerId === pid);
   function dialAll() {
     if (!isLeader || broker !== 'online' || !peer || peer.destroyed || peer.disconnected) return;
+    for (const [pid, e] of conns) { const dc = e.conn.dataChannel; if (e.state === 'open' && dc && dc.readyState !== 'open') { log('stale channel to ' + short(pid) + ' — redialling'); conns.delete(pid); try { e.conn.close(); } catch {} } }
     for (const c of contactsCache) if (!conns.has(c.peerId)) dial(c.peerId);
   }
   function dial(pid) {
@@ -429,12 +454,18 @@
     if (isLeader) { if (pid) requestSync(pid, true); else for (const p of conns.keys()) requestSync(p, true); dialAll(); }
     else { try { bc.postMessage({ t: 'syncNow', peerId: pid || null }); } catch {} }
   }
-  async function setPeerServer(ps) {
+  async function getSettings() { ready(); const s = (await dbGet('meta', 'settings')) || {}; return { peerServer: s.peerServer || null, iceServers: s.iceServers || null }; }
+  async function saveSettings(patch) {
     ready(); const s = (await dbGet('meta', 'settings')) || { key: 'settings' };
-    if (ps) s.peerServer = ps; else delete s.peerServer;
+    for (const k of ['peerServer', 'iceServers']) if (k in patch) { if (patch[k]) s[k] = patch[k]; else delete s[k]; }
     await dbPut('meta', s);
-    if (isLeader && peer) { try { peer.destroy(); } catch {} await createPeer(); }
+    try { bc.postMessage({ t: 'settings' }); } catch {}
+    if (isLeader) recreatePeer(0);
   }
+  const setPeerServer = ps => saveSettings({ peerServer: ps });
+  /** iceServers: array in RTCIceServer format, e.g. [{urls:'turn:turn.example.com:443?transport=tcp', username, credential}]. null = built-in defaults. */
+  const setIceServers = list => saveSettings({ iceServers: list });
+  const defaultIceServers = () => ICE.iceServers.map(x => ({ ...x }));
   /** Run `fn` once per app+name (flag stored in meta). Use it for the one-time migration of old storage. */
   async function migrate(name, fn) {
     ready(); const key = 'migrated:' + appName + ':' + name;
@@ -450,6 +481,7 @@
       case 'asset': fireChange({ app: '*', coll: '*', ids: [], asset: m.hash }); break;
       case 'contacts': contactsChanged(); break;
       case 'syncNow': if (isLeader) syncNow(m.peerId); break;
+      case 'settings': if (isLeader) recreatePeer(0); break;
       case 'status': if (!isLeader) { mirror = m.s; leaderKnown = true; fireStatus(status()); } break;
       case 'status?': if (isLeader) pushStatus(); break;
       case 'hb': if (window.__sfhaOnBeat) window.__sfhaOnBeat(); if (isLeader && !navigator.locks && m.winId !== winId && m.winId < winId) stepDown('duplicate leader'); break;
@@ -509,13 +541,16 @@
     return { el: bg, close };
   }
   function brokerText(s) {
-    return s.broker === 'online' ? 'Online' : s.broker === 'connecting' ? 'Connecting to signalling server…' : s.broker === 'id-taken' ? 'This ID is already in use in another tab or window' : s.broker === 'disabled' ? 'Sync unavailable (PeerJS could not be loaded)' : s.broker === 'error' ? 'Error: ' + s.brokerMsg : 'Offline' + (s.brokerMsg ? ' (' + s.brokerMsg + ')' : '');
+    return s.broker === 'online' ? 'Online' : s.broker === 'connecting' ? 'Connecting to signalling server…' : s.broker === 'id-taken' ? 'Waiting for the broker to release this ID (previous session) — ' + (s.brokerMsg || 'retrying…') : s.broker === 'disabled' ? 'Sync unavailable (PeerJS could not be loaded)' : s.broker === 'error' ? 'Error: ' + s.brokerMsg : 'Offline' + (s.brokerMsg ? ' (' + s.brokerMsg + ')' : '');
   }
   async function renderPanel() {
     if (!panel || !document.body.contains(panel.el)) { panel = null; return; }
-    const s = status(), contacts = await listContacts();
+    const s = status(), contacts = await listContacts(), cfg = await getSettings();
     if (!panel || !document.body.contains(panel.el)) return;
     const body = panel.el.querySelector('#sfhaBody');
+    // don't wipe the user's typing on a status refresh
+    const ae = document.activeElement; if (ae && body.contains(ae) && ae.matches('input,textarea')) return;
+    const detailsOpen = !!(body.querySelector('details') && body.querySelector('details').open);
     const fmt = ts => ts ? new Date(ts).toLocaleString() : 'never';
     const cm = new Map(s.connections.map(c => [c.peerId, c]));
     const dotCls = s.broker === 'online' ? 'on' : s.broker === 'connecting' ? 'busy' : ['id-taken', 'error', 'disabled'].includes(s.broker) ? 'err' : '';
@@ -532,7 +567,24 @@
       <p class="sfha-small">Both devices need any of the tools open. Pair each other by ID; they then connect automatically and exchange changes for all tools (last write wins). Files go directly from device to device.</p>
       <label class="sfha-f">Last sync</label>
       <div class="sfha-small">${s.lastSync ? `${esc(s.lastSync.label)} · ${esc(fmt(s.lastSync.at))} · ${s.lastSync.records} records, ${s.lastSync.assets} files received` : 'never'}</div>
-      <div class="sfha-log">${s.log && s.log.length ? s.log.map(esc).join('\n') : '—'}</div>`;
+      <div class="sfha-log">${s.log && s.log.length ? s.log.map(esc).join('\n') : '—'}</div>
+      <details style="margin-top:12px" ${detailsOpen ? 'open' : ''}><summary class="sfha-small" style="cursor:pointer">Connection settings (TURN / broker)</summary>
+        <label class="sfha-f">ICE servers (JSON array, RTCIceServer format)</label>
+        <textarea id="sfhaIce" rows="6" style="width:100%;box-sizing:border-box;background:var(--sfha-panel2,#0d1117);border:1px solid var(--sfha-border,#30363d);color:inherit;border-radius:8px;padding:7px 10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px">${esc(JSON.stringify(cfg.iceServers || defaultIceServers(), null, 1))}</textarea>
+        <label class="sfha-f">PeerJS broker (JSON object {host,port,path,secure} — empty = public broker)</label>
+        <input type="text" id="sfhaBroker" style="width:100%;box-sizing:border-box;background:var(--sfha-panel2,#0d1117);border:1px solid var(--sfha-border,#30363d);color:inherit;border-radius:8px;padding:7px 10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px" value="${esc(cfg.peerServer ? JSON.stringify(cfg.peerServer) : '')}">
+        <div class="sfha-row"><button class="sfha-btn pri" id="sfhaCfgSave">Save & reconnect</button><button class="sfha-btn" id="sfhaCfgReset">Reset to defaults</button></div>
+        <p class="sfha-small">On corporate networks UDP is usually blocked: add a TURN server you control on <code>turns:…:443?transport=tcp</code> (e.g. a Metered.ca account, Cloudflare TURN or your own coturn). Settings are shared by every tool on this device.</p>
+      </details>`;
+    body.querySelector('#sfhaCfgSave').onclick = async () => {
+      try {
+        const iceTxt = body.querySelector('#sfhaIce').value.trim(), brTxt = body.querySelector('#sfhaBroker').value.trim();
+        const ice = iceTxt ? JSON.parse(iceTxt) : null; if (ice && !Array.isArray(ice)) throw new Error('ICE servers must be a JSON array');
+        const br = brTxt ? JSON.parse(brTxt) : null; if (br && !br.host) throw new Error('Broker needs a host');
+        await saveSettings({ iceServers: ice, peerServer: br }); renderPanel();
+      } catch (e) { alert(e.message || e); }
+    };
+    body.querySelector('#sfhaCfgReset').onclick = async () => { if (confirm('Reset connection settings to the built-in defaults?')) { await saveSettings({ iceServers: null, peerServer: null }); renderPanel(); } };
     body.querySelector('#sfhaCopy').onclick = async () => { try { await navigator.clipboard.writeText(s.myId); body.querySelector('#sfhaCopy').textContent = 'Copied'; } catch { const r = document.createRange(); r.selectNodeContents(body.querySelector('.sfha-id span')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); } };
     body.querySelector('#sfhaAdd').onclick = async () => { try { await addContact(body.querySelector('#sfhaPeer').value, body.querySelector('#sfhaLabel').value.trim()); renderPanel(); } catch (e) { alert(e.message || e); } };
     body.querySelectorAll('.sfha-c').forEach(row => {
@@ -566,7 +618,9 @@
     onChange(fn) { changeFns.add(fn); return () => changeFns.delete(fn); },
     onStatus(fn) { statusFns.add(fn); return () => statusFns.delete(fn); },
     contacts: { list: listContacts, add: addContact, remove: removeContact },
-    myId: () => myId, isLeader: () => isLeader, status, openPanel, syncNow, setPeerServer, migrate,
+    myId: () => myId, isLeader: () => isLeader, status, openPanel, syncNow, migrate,
+    settings: { get: getSettings, save: saveSettings, setPeerServer, setIceServers, defaultIceServers },
+    setPeerServer, setIceServers,
     util: { uid, sha256, nowIso },
   };
   window.SfhaSync = api;

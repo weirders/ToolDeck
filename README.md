@@ -61,7 +61,7 @@ The full contract is in [`SYNC-CONTRACT.md`](SYNC-CONTRACT.md). The short versio
 </script>
 ```
 
-Also available: `get(app,coll,id)`, `hasAsset(hash)`, `contacts.list/add/remove`, `myId()`, `status()`, `onStatus(fn)`, `syncNow()`, `migrate(name, fn)` (run something once per app), `setPeerServer({host,port,path,secure})`.
+Also available: `get(app,coll,id)`, `hasAsset(hash)`, `contacts.list/add/remove`, `myId()`, `status()`, `onStatus(fn)`, `syncNow()`, `migrate(name, fn)` (run something once per app), `settings.get()/save({iceServers, peerServer})` for your own TURN server or broker (also editable in the Sync panel).
 
 ### Record shape
 

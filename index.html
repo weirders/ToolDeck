@@ -4,10 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ToolDeck — all my tools in one place</title>
+<meta name="theme-color" content="#161b22">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ToolDeck">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
 <style>
   :root{
     --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --border:#30363d;
-    --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --accent2:#3fb950;
+    --text:#e6edf3; --muted:#9da7b3; --soft:#c9d1d9; --accent:#58a6ff; --accent2:#3fb950;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{height:100%;}
@@ -27,16 +36,18 @@
 
   .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px;}
   .card{
-    background:var(--panel); border:1px solid var(--border); border-radius:12px;
-    padding:20px; cursor:pointer; transition:transform .12s ease, border-color .12s ease, background .12s ease;
+    background:var(--panel); border:1px solid var(--border); border-left:4px solid var(--card-accent,var(--accent)); border-radius:12px;
+    padding:20px 20px 18px; cursor:pointer; color:var(--text); font:inherit;
+    transition:transform .12s ease, border-color .12s ease, background .12s ease;
     display:flex; flex-direction:column; gap:10px; text-align:left;
   }
-  .card:hover{transform:translateY(-2px); border-color:var(--accent); background:var(--panel2); position:relative;}
-  .card .ico{font-size:28px; line-height:1; filter:drop-shadow(0 2px 4px rgba(0,0,0,.4));}
-  .card h2{font-size:17px; margin:0;}
-  .card p{color:var(--muted); font-size:13.5px; line-height:1.45; flex:1;}
-  .card .go{color:var(--accent); font-size:13px; font-weight:600; opacity:0; transition:opacity .12s;}
+  .card:hover,.card:focus-visible{transform:translateY(-2px); border-color:var(--card-accent,var(--accent)); background:var(--panel2); outline:none;}
+  .card .ico{font-size:30px; line-height:1; filter:drop-shadow(0 2px 4px rgba(0,0,0,.4));}
+  .card h2{font-size:18px; margin:0; color:#fff; letter-spacing:.2px;}
+  .card p{color:var(--soft); font-size:15px; line-height:1.5; flex:1;}
+  .card .go{color:var(--card-accent,var(--accent)); font-size:14px; font-weight:600; opacity:.85; transition:opacity .12s;}
   .card:hover .go{opacity:1;}
+  @media (max-width:600px){ #home{padding:24px 16px;} .card p{font-size:15.5px;} .card h2{font-size:19px;} }
   .foot{color:var(--muted); font-size:12.5px; text-align:center; margin-top:36px;}
   .foot code{background:var(--panel); padding:2px 6px; border-radius:5px; border:1px solid var(--border);}
 
@@ -153,7 +164,7 @@ function buildHome(){
   grid.innerHTML = '';
   TOOLS.forEach(t=>{
     const c = document.createElement('button');
-    c.className='card';
+    c.className='card'; if(t.accent) c.style.setProperty('--card-accent', t.accent);
     c.innerHTML = `<div class="ico">${t.icon}</div><h2>${t.name}</h2><p>${t.desc||''}</p><span class="go">Launch →</span>`;
     c.addEventListener('click', ()=>location.hash = '#tool/'+encodeURIComponent(t.name));
     grid.appendChild(c);
@@ -212,6 +223,11 @@ if(window.SfhaSync){
     .catch(e=>console.error('sfha-sync init failed', e));
   $('btnSyncHome').onclick = ()=>SfhaSync.openPanel();
   $('btnSyncBar').onclick  = ()=>SfhaSync.openPanel();
+}
+
+/* ---------- PWA ---------- */
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  navigator.serviceWorker.register('sw.js').catch(e=>console.warn('sw', e));
 }
 
 /* ---------- Boot (home is default) ---------- */

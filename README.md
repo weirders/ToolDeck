@@ -39,6 +39,10 @@ Push to `main` — done. See the registry section in `index.html` for all fields
 - **Always current** — tools load from their own live Pages URLs.
 - **Sandboxed** — the iframe uses a restrictive `sandbox` attribute.
 
+## Install as an app (PWA)
+
+ToolDeck ships a `manifest.json`, `sw.js` and icons. On Android/Chrome use *Add to Home screen* / *Install app*; on iOS Safari *Share → Add to Home Screen*. It then opens as a standalone window and `launch_handler: navigate-existing` reuses the open instance instead of spawning a new tab each time you tap the shortcut. The service worker only caches the deck shell (network-first, so updates land on the next open); tools still load live from their own repos.
+
 ## Sync — one layer for every tool
 
 All tools live on the same origin (`weirders.github.io/<repo>/`), so they share one IndexedDB and one BroadcastChannel. [`sync.v1.js`](sync.v1.js) is the shared peer-to-peer sync layer (PeerJS/WebRTC, extracted from FloorplanWeb): records and files travel device-to-device, only signalling goes through the broker. ToolDeck loads it and shows the **Sync** panel (top bar and home view): your device ID, paired devices with live status, approval of unknown devices, last-sync stats and a log.

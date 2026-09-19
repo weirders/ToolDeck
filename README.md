@@ -14,6 +14,7 @@ Each tool stays in its own repo and keeps running live from its own GitHub Pages
 - 🎙️ **VoiceFlowWeb** — voice dictation with live word count & session timer
 - 🗺️ **FloorplanWeb** — floor-plan marker tool with photos, numbering and print
 - 🧩 **SOATWeb** — SOAT / SCAT incident analysis
+- 🏋️ **ErgoFlow** — physical-strain assessments (KIM, NIOSH, REBA, RULA)
 
 ## Adding a tool (takes ~30 seconds)
 

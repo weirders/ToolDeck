@@ -42,7 +42,7 @@ Push to `main` — done. See the registry section in `index.html` for all fields
 
 ## Install as an app (PWA)
 
-ToolDeck ships a `manifest.json`, `sw.js` and icons. On Android/Chrome use *Add to Home screen* / *Install app*; on iOS Safari *Share → Add to Home Screen*. It then opens as a standalone window and `launch_handler: navigate-existing` reuses the open instance instead of spawning a new tab each time you tap the shortcut. The service worker only caches the deck shell (network-first, so updates land on the next open); tools still load live from their own repos.
+ToolDeck ships a `manifest.json`, `sw.js` and icons. On Android/Chrome use *Add to Home screen* / *Install app*; on iOS Safari *Share → Add to Home Screen*. It then opens as a standalone window and `launch_handler: navigate-existing` reuses the open instance instead of spawning a new tab each time you tap the shortcut. The deck's service worker caches only the deck shell (network-first, so updates land on the next open); tools still load live from their own repos. Each tool repo ships its own `sw.js` so it also opens offline, in the deck or standalone; see [`OFFLINE.md`](OFFLINE.md).
 
 ## Sync — one layer for every tool
 

@@ -610,6 +610,21 @@
     m.el.querySelector('.sfha-x').onclick = () => answer(null);
   }
 
+  /* ---------- hosted mode ----------
+     A tool running inside ToolDeck's iframe shares ToolDeck's sync (ToolDeck is the leader and
+     shows the one Sync badge). Hosts declare themselves with window.SFHA_HOST. Tools mark their
+     own header badge with data-sfha-badge; it is hidden while hosted, so there is only one badge.
+     Tools keep a "Sync" entry in their own menu/settings that calls openPanel() for the details. */
+  function hosted() {
+    try { return window.parent !== window && !!window.parent.SFHA_HOST; } catch (e) { return false; }
+  }
+  if (hosted()) {
+    document.documentElement.classList.add('sfha-hosted');
+    const st = document.createElement('style');
+    st.textContent = 'html.sfha-hosted [data-sfha-badge]{display:none!important}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
   /* ---------- public API ---------- */
   const api = {
     version: 1,
@@ -619,6 +634,7 @@
     onStatus(fn) { statusFns.add(fn); return () => statusFns.delete(fn); },
     contacts: { list: listContacts, add: addContact, remove: removeContact },
     myId: () => myId, isLeader: () => isLeader, status, openPanel, syncNow, migrate,
+    hosted,
     settings: { get: getSettings, save: saveSettings, setPeerServer, setIceServers, defaultIceServers },
     setPeerServer, setIceServers,
     util: { uid, sha256, nowIso },

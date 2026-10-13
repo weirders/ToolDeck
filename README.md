@@ -11,7 +11,7 @@ Each tool stays in its own repo and keeps running live from its own GitHub Pages
 - 🦺 **EHS-Tools-Web** — EHS visual analysis suite (5-Why / fishbone tree, ABC behaviour analysis)
 - 🔍 **InspectFlow** — inspection & checklist workbench (templates, inspections, archive, reports)
 - 📰 **NewsFlow** — news reader & aggregator
-- 🎙️ **VoiceFlowWeb** — voice dictation with live word count & session timer
+- 🎙️ **VoiceFlowWeb** — voice dictation with live word count, read-aloud and synced history
 - 🗺️ **FloorplanWeb** — floor-plan marker tool with photos, numbering and print
 - 🧩 **SOATWeb** — SOAT / SCAT incident analysis
 - 🏋️ **ErgoFlow** — physical-strain assessments (KIM, NIOSH, REBA, RULA)
@@ -46,7 +46,7 @@ ToolDeck ships a `manifest.json`, `sw.js` and icons. On Android/Chrome use *Add 
 
 ## Sync — one layer for every tool
 
-All tools live on the same origin (`weirders.github.io/<repo>/`), so they share one IndexedDB and one BroadcastChannel. [`sync.v1.js`](sync.v1.js) is the shared peer-to-peer sync layer (PeerJS/WebRTC, extracted from FloorplanWeb): records and files travel device-to-device, only signalling goes through the broker. ToolDeck loads it and shows the **Sync** panel (top bar and home view): your device ID, paired devices with live status, approval of unknown devices, last-sync stats and a log.
+All tools live on the same origin (`weirders.github.io/<repo>/`), so they share one IndexedDB and one BroadcastChannel. [`sync.v1.js`](sync.v1.js) is the shared peer-to-peer sync layer (PeerJS/WebRTC, extracted from FloorplanWeb): records and files travel device-to-device, only signalling goes through the broker. ToolDeck loads it and shows the **Sync** badge and panel (top bar and home view); tools running inside ToolDeck hide their own badge so there is only one (see *One sync badge* in the contract): your device ID, paired devices with live status, approval of unknown devices, last-sync stats and a log.
 
 The full contract is in [`SYNC-CONTRACT.md`](SYNC-CONTRACT.md). The short version:
 

@@ -25,6 +25,7 @@
 | `contacts.list/add(peerId,label)/remove(peerId)` | paired devices |
 | `myId()`, `isLeader()`, `status()` (sync) | `status()` → `{leader, leaderPresent, broker, myId, connections[], pending[], lastSync, log[]}` |
 | `onStatus(fn)`, `openPanel()`, `syncNow(peerId?)` | UI hooks — `openPanel()` is the full Sync panel, free for every app |
+| `hosted()` (sync) | `true` when running inside ToolDeck's iframe (the parent sets `window.SFHA_HOST`). See *One sync badge* below. |
 | `migrate(name, fn)` | runs `fn` once per app+name (flag in meta) |
 | `settings.get()` / `settings.save({iceServers, peerServer})` | shared connection settings in meta: `iceServers` (RTCIceServer array — add your own TURN on `turns:…:443?transport=tcp` for corporate networks) and `peerServer` `{host,port,path,secure}`; `null` = built-in defaults. Also editable in the Sync panel. |
 
@@ -47,3 +48,20 @@ await SfhaSync.migrate('v1', async () => {
 });
 ```
 Give migrated records an old timestamp (`keepStamp:true` keeps `updatedAt` if present; otherwise use `new Date(0).toISOString()`) so any real edit on another device wins. Leave the old store in place but never read from it again.
+
+## One sync badge
+Inside ToolDeck there is exactly one Sync badge: ToolDeck's (ToolDeck is the leader, so it shows the real state).
+- Mark your app's own header badge / status button with the attribute **`data-sfha-badge`**. When the app runs inside ToolDeck,
+  `sync.v1.js` adds `sfha-hosted` to `<html>` and hides every `[data-sfha-badge]`; standalone it stays visible.
+- **Always keep a second way in** that is *not* marked: a "Sync" item in your menu or settings that calls `openPanel()`,
+  so device pairing and the log stay reachable from inside ToolDeck too.
+- A host page (ToolDeck, or any future shell) declares itself with `window.SFHA_HOST = "<name>"` before loading `sync.v1.js`.
+
+| app | badge (hidden in ToolDeck) | always-available entry |
+|---|---|---|
+| EHS-Tools-Web | `#syncBtn` | ⋯ menu → *Sync status…* |
+| InspectFlow | — | *Backup / sync* page |
+| FloorplanWeb | `#btnSync` | Import / export dialog → *Sync* |
+| SOATWeb | header ⇄ button | Settings → data → *Sync* |
+| ErgoFlow | home bar sync icon | menu sheet → *Sync* |
+| VoiceFlowWeb | dot on the ⚙ button | Settings → *Sync* → Details |

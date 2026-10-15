@@ -44,6 +44,10 @@ Push to `main` — done. See the registry section in `index.html` for all fields
 
 ToolDeck ships a `manifest.json`, `sw.js` and icons. On Android/Chrome use *Add to Home screen* / *Install app*; on iOS Safari *Share → Add to Home Screen*. It then opens as a standalone window and `launch_handler: navigate-existing` reuses the open instance instead of spawning a new tab each time you tap the shortcut. The deck's service worker caches only the deck shell (network-first, so updates land on the next open); tools still load live from their own repos. Each tool repo ships its own `sw.js` so it also opens offline, in the deck or standalone; see [`OFFLINE.md`](OFFLINE.md).
 
+## Shared look
+
+The tools share a UI font, control shapes, focus ring and a title mark in their card colour; colours and layouts stay per app. See [`STYLE.md`](STYLE.md).
+
 ## Sync — one layer for every tool
 
 All tools live on the same origin (`weirders.github.io/<repo>/`), so they share one IndexedDB and one BroadcastChannel. [`sync.v1.js`](sync.v1.js) is the shared peer-to-peer sync layer (PeerJS/WebRTC, extracted from FloorplanWeb): records and files travel device-to-device, only signalling goes through the broker. ToolDeck loads it and shows the **Sync** badge and panel (top bar and home view); tools running inside ToolDeck hide their own badge so there is only one (see *One sync badge* in the contract): your device ID, paired devices with live status, approval of unknown devices, last-sync stats and a log.

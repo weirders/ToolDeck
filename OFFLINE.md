@@ -13,12 +13,14 @@ own worker, a tool opened offline depends on the browser's HTTP cache, which Git
 - Cache Storage is **shared by every tool on weirders.github.io**, so a worker only deletes caches starting
   with its own prefix (`<app>-shell-`). Never delete caches you don't own (VoiceFlowWeb keeps its speech models there).
 
-The sync layer stays single-source: the worker caches the live `ToolDeck/sync.v1.js`, it doesn't copy it.
+The sync layer and photo editor stay single-source: the worker caches the live `ToolDeck/sync.v1.js` and
+`ToolDeck/photo-editor.v1.js`, it doesn't copy them.
 
 ## Adding offline to a new tool
 1. Copy [`tool-sw.template.js`](tool-sw.template.js) to the tool repo as `sw.js`.
 2. Replace `__NAME__`, `__PREFIX__` (short lowercase app name) and `__EXTRA__`
-   (`, 'https://weirders.github.io/ToolDeck/sync.v1.js'` if the tool uses sync, otherwise empty).
+   (`, 'https://weirders.github.io/ToolDeck/sync.v1.js'` if the tool uses sync, plus
+   `, 'https://weirders.github.io/ToolDeck/photo-editor.v1.js'` if it uses the shared photo editor; otherwise empty).
 3. Register it once in `index.html`:
    ```html
    <script>if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js");</script>

@@ -62,6 +62,6 @@ Inside ToolDeck there is exactly one Sync badge: ToolDeck's (ToolDeck is the lea
 | EHS-Tools-Web | `#syncBtn` | ⋯ menu → *Sync status…* |
 | InspectFlow | — | *Backup / sync* page |
 | FloorplanWeb | `#btnSync` | Import / export dialog → *Sync* |
-| SOATWeb | header ⇄ button | Settings → data → *Sync* |
+| CheckFlow (repo SOATWeb) | header ⇄ button | Settings → data → *Sync* |
 | ErgoFlow | home bar sync icon | menu sheet → *Sync* |
 | VoiceFlowWeb | dot on the ⚙ button | Settings → *Sync* → Details |

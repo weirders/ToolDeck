@@ -13,7 +13,7 @@ Each tool stays in its own repo and keeps running live from its own GitHub Pages
 - 📰 **NewsFlow** — news reader & aggregator
 - 🎙️ **VoiceFlowWeb** — voice dictation with live word count, read-aloud and synced history
 - 🗺️ **FloorplanWeb** — floor-plan marker tool with photos, numbering and print
-- 🧩 **SOATWeb** — SOAT / SCAT incident analysis
+- 🧩 **CheckFlow** (repo SOATWeb) — checklists & analyses (SOAT/SCAT, SAT, TapRooT, custom) with photos
 - 🏋️ **ErgoFlow** — physical-strain assessments (KIM, NIOSH, REBA, RULA)
 
 ## Adding a tool (takes ~30 seconds)
@@ -66,7 +66,7 @@ The full contract is in [`SYNC-CONTRACT.md`](SYNC-CONTRACT.md). The short versio
 </script>
 ```
 
-**Shared photo editor.** [`photo-editor.v1.js`](photo-editor.v1.js) is the photo markup tool (arrow, circle, text, blur, measure, angle) used by InspectFlow and ErgoFlow — see [PHOTO-EDITOR.md](PHOTO-EDITOR.md).
+**Shared photo editor.** [`photo-editor.v1.js`](photo-editor.v1.js) is the photo markup tool (arrow, circle, text, blur, measure, angle) used by InspectFlow, ErgoFlow and CheckFlow — see [PHOTO-EDITOR.md](PHOTO-EDITOR.md).
 
 Also available: `get(app,coll,id)`, `hasAsset(hash)`, `contacts.list/add/remove`, `myId()`, `status()`, `onStatus(fn)`, `syncNow()`, `migrate(name, fn)` (run something once per app), `settings.get()/save({iceServers, peerServer})` for your own TURN server or broker (also editable in the Sync panel).
 

@@ -35,5 +35,5 @@ The tool must be opened online once (standalone or inside ToolDeck) to install i
 | NewsFlow | `newsflow-shell-` |
 | VoiceFlowWeb | `voiceflow-shell-` |
 | FloorplanWeb | `floorplan-shell-` |
-| SOATWeb | `soat-shell-` |
+| CheckFlow (repo SOATWeb) | `soat-shell-` |
 | ErgoFlow | `ergoflow-shell-` |

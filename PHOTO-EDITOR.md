@@ -4,7 +4,7 @@
 editor is first opened). Global: `window.SfhaPhotoEditor`. Add the URL to the tool's `sw.js` `PRECACHE` so it works offline
 (see [OFFLINE.md](OFFLINE.md)).
 
-Used by: **InspectFlow**, **ErgoFlow**. Planned: SOATWeb.
+Used by: **InspectFlow**, **ErgoFlow**, **CheckFlow** (repo SOATWeb).
 
 ## What it does
 Full-screen markup of one photo: **arrow, circle, text, blur, measure (ruler), angle**. Blur is burned into the image;

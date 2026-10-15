@@ -1,4 +1,4 @@
-/* sfha photo editor v1 — shared photo markup for every SFHA tool (ErgoFlow, InspectFlow, SOATWeb, ...).
+/* sfha photo editor v1 — shared photo markup for every SFHA tool (ErgoFlow, InspectFlow, CheckFlow, ...).
    Load:   <script src="https://weirders.github.io/ToolDeck/photo-editor.v1.js"></script>
    Global: window.SfhaPhotoEditor  — see PHOTO-EDITOR.md for the contract.
 

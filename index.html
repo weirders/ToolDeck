@@ -143,6 +143,7 @@
    - icon   : any emoji / single char
    - desc   : one-line description shown on the card
    - accent : optional hex color; omitted → default accent
+   - aliases: optional old names, so earlier #tool/<old> links keep working
    ===================================================================== */
 const TOOLS = [
   { name:"EHS-Tools-Web", url:"https://weirders.github.io/EHS-Tools-Web/",
@@ -160,9 +161,9 @@ const TOOLS = [
   { name:"FloorplanWeb", url:"https://weirders.github.io/FloorplanWeb/",
     icon:"🗺️", accent:"#f778ba",
     desc:"Floor-plan marker tool — pin findings on plans, add photos, number and print. Syncs device-to-device." },
-  { name:"SOATWeb", url:"https://weirders.github.io/SOATWeb/",
+  { name:"CheckFlow", url:"https://weirders.github.io/SOATWeb/", aliases:["SOATWeb"],
     icon:"🧩", accent:"#ff7b72",
-    desc:"SOAT / SCAT incident analysis — systematic cause tree, item lists, reports and import/export." },
+    desc:"Checklists & analyses — SOAT/SCAT, SAT, TapRooT and your own questionnaires, with photos, reports and import/export." },
   { name:"ErgoFlow", url:"https://weirders.github.io/ErgoFlow/",
     icon:"🏋️", accent:"#d2a8ff",
     desc:"Physical-strain assessments — KIM (lifting, pushing/pulling), NIOSH, REBA and RULA with scoring and reports." },
@@ -185,8 +186,9 @@ function buildHome(){
 }
 
 /* ---------- Runner ---------- */
+const toolIs = (x,name)=>{ const n=String(name).toLowerCase(); return x.name.toLowerCase()===n || (x.aliases||[]).some(a=>a.toLowerCase()===n); };
 function openTool(name){
-  const t = TOOLS.find(x=>x.name.toLowerCase()===String(name).toLowerCase());
+  const t = TOOLS.find(x=>toolIs(x,name));
   if(!t){ location.hash=''; return; }
   runner.classList.add('on');
   $('runTitle').textContent = t.icon+'  '+t.name;
@@ -203,7 +205,7 @@ function closeRunner(){
   runner.classList.remove('on'); frame.src=''; shield.classList.remove('on');
 }
 function step(d){
-  const cur = TOOLS.findIndex(x=>x.name.toLowerCase()===decodeURIComponent((location.hash.split('/')[1]||'')).toLowerCase());
+  const cur = TOOLS.findIndex(x=>toolIs(x,decodeURIComponent(location.hash.split('/')[1]||'')));
   const n = (cur+d+TOOLS.length)%TOOLS.length;
   location.hash = '#tool/'+encodeURIComponent(TOOLS[n].name);
 }

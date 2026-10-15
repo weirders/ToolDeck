@@ -61,6 +61,8 @@
   const pending = new Map(); // unknown incoming peers awaiting approval
   let contactsCache = [];
   const logLines = [];
+  let relayResult = '';
+  const failLogged = new Map();   // peerId -> last time a connect failure was logged (max once per 5 min)
   let lastSync = null;       // {peerId, label, at, records, assets}
 
   // follower-only mirror of the leader's status
@@ -102,7 +104,7 @@
   function snapshot() {
     return {
       leader: isLeader, leaderPresent: true, app: appName, myId, broker, brokerMsg,
-      connections: [...conns.values()].map(e => ({ peerId: e.conn.peer, dir: e.dir, state: e.state, syncing: !!e.expect, lastSyncAt: e.lastSyncAt || 0 })),
+      connections: [...conns.values()].map(e => ({ peerId: e.conn.peer, dir: e.dir, state: e.state, syncing: !!e.expect, lastSyncAt: e.lastSyncAt || 0, route: e.route || '' })),
       pending: [...pending.keys()], lastSync, log: logLines.slice(),
     };
   }
@@ -288,6 +290,56 @@
     clearInterval(dialTimer); dialTimer = setInterval(dialAll, DIAL_MS);
   }
 
+  /* ---------- route diagnostics ----------
+     WebRTC tries, in order: the local network (host candidates; Chrome hides local IPs behind *.local names),
+     the internet via each side's public address (STUN), and finally a relay (TURN). Two devices on the SAME
+     Wi-Fi share one public address, so if the Wi-Fi blocks device-to-device traffic (client/AP isolation,
+     common on corporate, guest and some mesh networks) or *.local names don't resolve, the internet route
+     needs the router to loop traffic back (hairpin NAT), which many routers don't do. Then only the relay
+     works. These helpers make that visible in the log. */
+  async function routeOf(conn) {
+    const pc = conn && conn.peerConnection; if (!pc || !pc.getStats) return null;
+    try {
+      const st = await pc.getStats(); let pair = null; const byId = {};
+      st.forEach(x => { byId[x.id] = x; });
+      st.forEach(x => { if (x.type === 'transport' && x.selectedCandidatePairId) pair = byId[x.selectedCandidatePairId]; });
+      if (!pair) st.forEach(x => { if (x.type === 'candidate-pair' && x.state === 'succeeded' && (x.nominated || x.selected) && !pair) pair = x; });
+      const kinds = { local: new Set(), remote: new Set() };
+      st.forEach(x => { if (x.type === 'local-candidate') kinds.local.add(x.candidateType); if (x.type === 'remote-candidate') kinds.remote.add(x.candidateType); });
+      const lc = pair && byId[pair.localCandidateId], rc = pair && byId[pair.remoteCandidateId];
+      return { pair: pair ? [lc && lc.candidateType, rc && rc.candidateType] : null, ice: pc.iceConnectionState, kinds };
+    } catch { return null; }
+  }
+  const routeText = rt => !rt || !rt.pair ? 'route unknown'
+    : rt.pair.includes('relay') ? 'via relay (TURN)'
+    : rt.pair[0] === 'host' && rt.pair[1] === 'host' ? 'direct, same network'
+    : 'direct, over the internet';
+  function whyFailed(rt) {
+    if (!rt) return 'no answer from the other device (is a tool open there?)';
+    const relay = rt.kinds.local.has('relay');
+    const base = rt.ice === 'new' || (!rt.kinds.remote.size) ? 'the other device never answered (is a tool open there, and online?)'
+      : 'no network route between the devices';
+    return base + (relay ? '' : ' · the relay (TURN) gave no address, so it is unreachable or its login is rejected: use “Test relay” under Connection settings');
+  }
+
+  /** Ask each TURN server in the current settings for a relay address. Works without the other device. */
+  async function testRelay(timeoutMs = 9000) {
+    const s = await getSettings(), ice = Array.isArray(s.iceServers) && s.iceServers.length ? s.iceServers : ICE.iceServers;
+    const turns = ice.filter(x => [].concat(x.urls).some(u => /^turns?:/.test(u)));
+    if (!turns.length) return { ok: false, text: 'No TURN server configured.' };
+    const pc = new RTCPeerConnection({ iceServers: turns, iceTransportPolicy: 'relay' });
+    const got = [];
+    try {
+      pc.createDataChannel('t');
+      pc.onicecandidate = ev => { if (ev.candidate && / typ relay /.test(ev.candidate.candidate)) got.push(ev.candidate.candidate.split(' ')[4]); };
+      await pc.setLocalDescription(await pc.createOffer());
+      await new Promise(res => { const t = setTimeout(res, timeoutMs); pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); res(); } }; });
+    } finally { pc.close(); }
+    const host = [].concat(turns[0].urls)[0].replace(/^turns?:/, '').split('?')[0];
+    return got.length ? { ok: true, text: `Relay works (${host}, ${got.length} address${got.length > 1 ? 'es' : ''}). Devices that can't reach each other directly will use it.` }
+                      : { ok: false, text: `Relay NOT working (${host}): no relay address within ${timeoutMs / 1000} s, so the server is unreachable or rejects the login. Devices on the same Wi-Fi with device isolation, or behind strict firewalls, can't connect. Add a TURN server with your own credentials above.` };
+  }
+
   /* ---------- dialling & dedupe ---------- */
   const contact = pid => contactsCache.find(c => c.peerId === pid);
   function dialAll() {
@@ -299,7 +351,12 @@
     let conn; try { conn = peer.connect(pid, { reliable: true }); } catch { return; }
     if (!conn) return;
     setupConn(conn, 'out');
-    setTimeout(() => { const e = conns.get(pid); if (e && e.conn === conn && e.state !== 'open') { try { conn.close(); } catch {} if (conns.get(pid) === e) conns.delete(pid); pushStatus(); } }, OPEN_TIMEOUT);
+    setTimeout(async () => {
+      const e = conns.get(pid); if (!(e && e.conn === conn && e.state !== 'open')) return;
+      const rt = await routeOf(conn), c = contact(pid);
+      if (Date.now() - (failLogged.get(pid) || 0) > 5 * 60000) { failLogged.set(pid, Date.now()); log('could not reach ' + (c ? c.label : short(pid)) + ': ' + whyFailed(rt)); }
+      try { conn.close(); } catch {} if (conns.get(pid) === e) conns.delete(pid); pushStatus();
+    }, OPEN_TIMEOUT);
   }
   function handleIncoming(conn) {
     const pid = conn.peer;
@@ -331,7 +388,9 @@
     conns.set(pid, entry); pushStatus();
     const onOpen = () => {
       if (conns.get(pid) !== entry) return;
-      entry.state = 'open'; log((dir === 'out' ? '→ ' : '← ') + 'connected ' + short(pid));
+      entry.state = 'open';
+      const who = (contact(pid) || {}).label || short(pid);
+      setTimeout(() => routeOf(conn).then(rt => { entry.route = routeText(rt); log((dir === 'out' ? '→ ' : '← ') + 'connected ' + who + ' · ' + entry.route); pushStatus(); }), 400);
       const c = contact(pid); if (c) { c.lastSeen = Date.now(); dbPut('contacts', c); }
       pushStatus(); requestSync(pid);
     };
@@ -561,7 +620,7 @@
         <span class="sfha-tag">${s.leader ? 'this window drives sync' : s.leaderPresent ? 'driven by another window' : 'electing…'}</span></div>
       ${s.pending && s.pending.length ? `<div class="sfha-small" style="color:#d29922">${s.pending.length} unknown device(s) waiting for approval${s.leader ? '' : ' in the leader window'}</div>` : ''}
       <label class="sfha-f">Paired devices</label>
-      <div id="sfhaContacts">${contacts.length ? contacts.map(c => { const e = cm.get(c.peerId); const st = e && e.state === 'open' ? (e.syncing ? 'Syncing…' : 'Connected') : e ? 'Connecting…' : 'Offline';
+      <div id="sfhaContacts">${contacts.length ? contacts.map(c => { const e = cm.get(c.peerId); const st = e && e.state === 'open' ? (e.syncing ? 'Syncing…' : 'Connected' + (e.route ? ' (' + e.route + ')' : '')) : e ? 'Connecting…' : 'Offline';
         return `<div class="sfha-c" data-id="${esc(c.peerId)}"><span class="sfha-dot ${e && e.state === 'open' ? (e.syncing ? 'busy' : 'on') : e ? 'busy' : ''}"></span><div class="sfha-g"><div class="n">${esc(c.label)}</div><div class="i">${esc(c.peerId)}</div><div class="s">${st} · last sync: ${esc(fmt(c.lastSync))}</div></div><button class="sfha-btn sfha-now" ${e && e.state === 'open' ? '' : 'disabled'} title="Sync now">⟳</button><button class="sfha-btn dng sfha-del" title="Unpair">✕</button></div>`; }).join('') : `<div class="sfha-small">No devices paired yet. Paste another device's ID below.</div>`}</div>
       <div class="sfha-row"><input type="text" id="sfhaPeer" placeholder="Other device's ID" autocomplete="off"><input type="text" id="sfhaLabel" placeholder="Name (e.g. Jelle's phone)" style="max-width:170px"><button class="sfha-btn pri" id="sfhaAdd">Pair</button></div>
       <p class="sfha-small">Both devices need any of the tools open. Pair each other by ID; they then connect automatically and exchange changes for all tools (last write wins). Files go directly from device to device.</p>
@@ -573,8 +632,9 @@
         <textarea id="sfhaIce" rows="6" style="width:100%;box-sizing:border-box;background:var(--sfha-panel2,#0d1117);border:1px solid var(--sfha-border,#30363d);color:inherit;border-radius:8px;padding:7px 10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px">${esc(JSON.stringify(cfg.iceServers || defaultIceServers(), null, 1))}</textarea>
         <label class="sfha-f">PeerJS broker (JSON object {host,port,path,secure} — empty = public broker)</label>
         <input type="text" id="sfhaBroker" style="width:100%;box-sizing:border-box;background:var(--sfha-panel2,#0d1117);border:1px solid var(--sfha-border,#30363d);color:inherit;border-radius:8px;padding:7px 10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px" value="${esc(cfg.peerServer ? JSON.stringify(cfg.peerServer) : '')}">
-        <div class="sfha-row"><button class="sfha-btn pri" id="sfhaCfgSave">Save & reconnect</button><button class="sfha-btn" id="sfhaCfgReset">Reset to defaults</button></div>
-        <p class="sfha-small">On corporate networks UDP is usually blocked: add a TURN server you control on <code>turns:…:443?transport=tcp</code> (e.g. a Metered.ca account, Cloudflare TURN or your own coturn). Settings are shared by every tool on this device.</p>
+        <div class="sfha-row"><button class="sfha-btn pri" id="sfhaCfgSave">Save & reconnect</button><button class="sfha-btn" id="sfhaRelay">Test relay</button><button class="sfha-btn" id="sfhaCfgReset">Reset to defaults</button></div>
+        <div class="sfha-small" id="sfhaRelayOut" style="margin-top:6px">${esc(relayResult || '')}</div>
+        <p class="sfha-small">Two devices on the <b>same Wi-Fi</b> may not reach each other directly (device isolation on corporate/guest Wi-Fi, or a router without hairpin NAT); they then need a working relay — check with <b>Test relay</b>. On corporate networks UDP is usually blocked as well: add a TURN server you control on <code>turns:…:443?transport=tcp</code> (e.g. a Metered.ca account, Cloudflare TURN or your own coturn). Settings are shared by every tool on this device.</p>
       </details>`;
     body.querySelector('#sfhaCfgSave').onclick = async () => {
       try {
@@ -583,6 +643,12 @@
         const br = brTxt ? JSON.parse(brTxt) : null; if (br && !br.host) throw new Error('Broker needs a host');
         await saveSettings({ iceServers: ice, peerServer: br }); renderPanel();
       } catch (e) { alert(e.message || e); }
+    };
+    body.querySelector('#sfhaRelay').onclick = async () => {
+      relayResult = 'Testing relay…'; body.querySelector('#sfhaRelayOut').textContent = relayResult;   // survives panel re-renders
+      try { const r = await testRelay(); relayResult = (r.ok ? '✓ ' : '✗ ') + r.text; log('relay test: ' + (r.ok ? 'ok' : 'FAILED')); }
+      catch (e) { relayResult = '✗ ' + (e.message || e); }
+      const out = document.getElementById('sfhaRelayOut'); if (out) out.textContent = relayResult;
     };
     body.querySelector('#sfhaCfgReset').onclick = async () => { if (confirm('Reset connection settings to the built-in defaults?')) { await saveSettings({ iceServers: null, peerServer: null }); renderPanel(); } };
     body.querySelector('#sfhaCopy').onclick = async () => { try { await navigator.clipboard.writeText(s.myId); body.querySelector('#sfhaCopy').textContent = 'Copied'; } catch { const r = document.createRange(); r.selectNodeContents(body.querySelector('.sfha-id span')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); } };

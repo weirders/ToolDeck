@@ -65,3 +65,14 @@ Inside ToolDeck there is exactly one Sync badge: ToolDeck's (ToolDeck is the lea
 | CheckFlow (repo SOATWeb) | header ⇄ button | Settings → data → *Sync* |
 | ErgoFlow | home bar sync icon | menu sheet → *Sync* |
 | VoiceFlowWeb | dot on the ⚙ button | Settings → *Sync* → Details |
+
+## Diagnosing connections
+The log says how each device connected: *direct, same network*, *direct, over the internet* or *via relay (TURN)*.
+A device that can't be reached within 20 s gets one log line (max once per 5 min) saying whether the other side
+answered at all and whether the relay gave an address. **Test relay** (Sync panel → Connection settings) asks the
+configured TURN servers for a relay address without needing the other device.
+
+Two devices on the same Wi-Fi share one public address. If that Wi-Fi blocks device-to-device traffic (client/AP
+isolation: corporate, guest, some mesh systems) or `*.local` names don't resolve, the only remaining route is the
+relay. The built-in relay entries use Metered's old shared `openrelayproject` login, which Metered no longer
+offers (it now needs a free account and your own key), so configure your own TURN server for those networks.

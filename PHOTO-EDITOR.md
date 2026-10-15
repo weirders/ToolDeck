@@ -13,7 +13,7 @@ touches storage — the tool decides how to keep the blobs.
 
 Two blur modes:
 - **default** — blur is burned into the returned `base`; everything else is data.
-- **`blurData: true`** (CheckFlow) — blur is a `{t:'blur', a, b}` annotation too, so *every* step is data over the
+- **`blurData: true`** (CheckFlow, InspectFlow, ErgoFlow) — blur is a `{t:'blur', a, b}` annotation too, so *every* step is data over the
   untouched original. Keep the original, sync `ann`, and any device can undo or erase any step, then re-render.
 
 Every loaded annotation is on the Undo stack, so steps from an earlier session or another device can be undone.
@@ -52,3 +52,13 @@ JPEG 0.86 full / 0.9 base, 320 px thumb.
 - Privacy (default mode): blurring a photo that was stored and synced before leaves the earlier unblurred copy on devices that
   already had it (the sync layer cannot delete assets). Blur before the first save where possible.
   With `blurData` the unblurred original is kept and synced on purpose; blur protects what leaves the app (reports, exports of the rendered photo).
+
+## How the tools store photos (all with blurData)
+| Tool | Original (never changed) | Rendered (reports) | Steps |
+|---|---|---|---|
+| CheckFlow | `orig.hash` (WebP ≤3000 px) | `hash` | `ann`, `scale` |
+| InspectFlow | `orig.hash` (WebP ≤3000 px) | `hash` (+ inline thumb) | `ann`, `scale` |
+| ErgoFlow | `base.hash` (WebP ≤3000 px for new photos) | `full.hash` | `ann`, `scale` |
+
+Asset references must be `hash` fields (or a `hashes` array) to sync — a field like `baseHash` stays on one device.
+Photos edited before this change keep their blur burned into the stored original.
